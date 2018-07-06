@@ -1,9 +1,12 @@
-pragma solidity 0.4.20;
+pragma solidity 0.4.24;
 
 // external = visible to other contracts and cannot be called internally
 // public = visisble to this contract, contracts derived from this contract, and any other contracts
 // internal = visible to this contract and derived contracts
 // private = visible to this contract only
+
+// view functions promise not to modify the state
+// pure functions promise not to read from or modify the state
 
 contract Queery {
   address private owner;
@@ -27,7 +30,7 @@ contract Queery {
 
   mapping(address => Person) public personInfo;
 
-  function Queery(uint256 _minimumBet) public {
+  constructor(uint256 _minimumBet) public {
     owner = msg.sender;
     if(_minimumBet != 0) minimumBet = _minimumBet;
   }
@@ -36,15 +39,19 @@ contract Queery {
     if(msg.sender == owner) selfdestruct(owner);
   }
 
-  function checkPersonExists(address person) public constant returns(bool) {
-    for(uint256 i = 0; i < people.length; i++) {
-      if(people[i] == person) return true;
-    }
-    return false;
+  function personExists(address person) public view returns(bool) {
+    // a person exists if their amountBet is greater than 0
+    return (personInfo[person].amountBet > 0);
   }
 
+  function sameABIPackedStrings(string a, string b) public pure returns(bool) {
+    // careful with this for hash collisions
+    return keccak256(abi.encodePacked(a)) == keccak256(abi.encodePacked(b));
+  }
+
+  // EXAMPLE
   function bet(uint256 numberSelected) public payable {
-    require(!checkPersonExists(msg.sender));
+    require(!personExists(msg.sender));
     require(numberSelected >= 1 && numberSelected <= 10);
     require(msg.value >= minimumBet);
 
@@ -54,95 +61,96 @@ contract Queery {
     people.push(msg.sender);
     totalBet += msg.value;
 
-    if(numberOfBets >= maxAmountOfBets) generateNumberWinner();
+    if(numberOfBets == maxAmountOfBets) generateNumberWinner();
   }
-
   function generateNumberWinner() public {
     uint256 numberGenerated = block.number % 10 + 1;
     distributePrizes(numberGenerated);
   }
-
-  function distributePrizes(uint256 numberWinner) public {
-    address[maxAmountOfBets] memory winners;
+  function distributePrizes(uint256 numberWinner) private {
+    address[20] memory winners;
     uint256 count = 0;
     for(uint256 i = 0; i < people.length; i++){
-       address personAddress = people[i];
-       if(personInfo[personAddress].numberSelected == numberWinner){
-          winners[count] = personAddress;
-          count++;
-       }
-       delete personInfo[personAddress]; // Delete all the players
+      address personAddress = people[i];
+      if(personInfo[personAddress].numberSelected == numberWinner){
+        winners[count] = personAddress;
+        count++;
+      }
+      delete personInfo[personAddress];
     }
-    people.length = 0; // Delete all the players array
-    uint256 winnerEtherAmount = totalBet / winners.length; // How much each winner gets
+    people.length = 0;
+    uint256 winnerEtherAmount = totalBet / winners.length;
     for(uint256 j = 0; j < count; j++){
-       if(winners[j] != address(0)) // Check that the address in this fixed array is not empty
-       winners[j].transfer(winnerEtherAmount);
+      if(winners[j] != address(0))
+      winners[j].transfer(winnerEtherAmount);
     }
-   }
+  }
+  // END EXAMPLE
+
+  // TODO: if person exists allow them to bet and win but don't add to the counts
+  // dont push them to people. use numberOfBets
 
   function proclaim(
     string name,
     string genderIdentity,
-    string sexualOrientation,
+    string sexualOrientation
     ) public payable {
-      require(!checkPersonExists(msg.sender));
-      require(name != "");
+      require(!personExists(msg.sender));
+      require(!sameABIPackedStrings(name, ""));
       require(msg.value >= minimumBet);
 
-      // TODO: if person exists allow them to bet and win but don't add to the counts
-      // dont push them to people
-      // use numberOfBets
       personInfo[msg.sender].name = name;
       personInfo[msg.sender].genderIdentity = genderIdentity;
       personInfo[msg.sender].sexualOrientation = sexualOrientation;
-      // personInfo[msg.sender].amountBet = msg.value;
 
       totalPeople++;
       people.push(msg.sender);
 
-      uint256 private reward = 0;
+      uint256 reward = 0;
 
       if(totalPeople % 21 == 0) {
         reward++;
-        if(genderIdentity != 'cis') {
+        if(sameABIPackedStrings(genderIdentity, 'cis') == false) {
           nonBinaryPeople++;
           if(nonBinaryPeople % 21 == 0) reward++;
         }
-        if(sexualOrientation != 'straight') {
+        if(sameABIPackedStrings(sexualOrientation, 'straight') == false) {
           queerPeople++;
           if(queerPeople % 21 == 0) reward++;
         }
-        if(genderIdentity == 'cis' && sexualOrientation == 'straight') {
+        if((sameABIPackedStrings(genderIdentity, 'cis') == true)
+        && (sameABIPackedStrings(sexualOrientation, 'straight') == true)
+        ) {
           allyPeople++;
           if(allyPeople % 21 == 0) reward++;
         }
         if (block.number % 21 == 0) reward++;
         // payout
-        uint256 payout = msg.value + (msg.value * reward);
-        if (payout >= totalBet) {
-          msg.sender.transfer(totalBet);
-        } else {
-          msg.sender.transfer(payout);
-          distributeLeftoverPayout(payout);
+        uint256 earnings = msg.value + (msg.value * reward);
+        uint256 maxPayout = totalBet;
+        totalBet = 0; // prevents re-entry compromise
+        // check for non-negative values
+        if (maxPayout >= earnings) {
+          uint256 leftoverPayout = maxPayout - earnings;
+          if (maxPayout >= leftoverPayout) {
+            uint256 winnerPayout = maxPayout - leftoverPayout;
+            msg.sender.transfer(winnerPayout);
+            distributeLeftoverPayout(leftoverPayout);
+          }
         }
-        totalBet = 0;
       } else {
         totalBet += msg.value;
       }
-  } // proclaim
+    } // Proclaim
 
-  function distributeLeftoverPayout(uint256 winnerPayout) public {
-    uint256 leftoverPayout = totalBet - winnerPayout;
-    if(leftoverPayout > 0) {
-      uint256 receiverPayout = (totalBet - winnerPayout) / 20;
-      for(uint256 i = people.length-2; i > people.length-22; i--) {
-        if(people[i] != address(0)) people[i].transfer(receiverPayout);
-      }
+  function distributeLeftoverPayout(uint256 leftoverPayout) private {
+    uint256 receiverPayout = leftoverPayout / 20;
+    for(uint256 i = people.length-2; i > people.length-22; i--) {
+      if(people[i] != address(0)) people[i].transfer(receiverPayout);
     }
   }
 
-  // This will allow you to save the ether you send to the contract. Otherwise it would be rejected.
+  // Fallback
   function() public payable { }
 
 }
