@@ -1,0 +1,44 @@
+{
+  "name": "queery",
+  "version": "1.0.0",
+  "description": "lgbt/queer data quiz",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thevaleriemack/queery.git"
+  },
+  "keywords": [
+    "queer",
+    "lgbt",
+    "data",
+    "ethereuem",
+    "quiz",
+    "thevaleriemack"
+  ],
+  "author": "thevaleriemack",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/thevaleriemack/queery/issues"
+  },
+  "homepage": "https://github.com/thevaleriemack/queery#readme",
+  "devDependencies": {
+    "babel-core": "^6.26.3",
+    "babel-loader": "^7.1.5",
+    "babel-preset-env": "^1.7.0",
+    "babel-preset-react": "^6.24.1",
+    "css-loader": "^0.28.11",
+    "json-loader": "^0.5.7",
+    "react": "^16.4.1",
+    "react-dom": "^16.4.1",
+    "style-loader": "^0.21.0",
+    "truffle": "^4.1.13",
+    "web3": "^0.20.0",
+    "webpack": "^4.15.1"
+  }
+}
