@@ -1,4 +1,4 @@
-pragma solidity 0.4.24;
+pragma solidity ^0.4.24;
 
 // external = visible to other contracts and cannot be called internally
 // public = visisble to this contract, contracts derived from this contract, and any other contracts
@@ -10,147 +10,131 @@ pragma solidity 0.4.24;
 
 contract Queery {
   address private owner;
-  uint256 internal minimumBet;
-  uint256 internal totalBet;
-  uint256 internal numberOfBets;
-  uint256 internal maxAmountOfBets = 20;
   address[] public people;
-  uint256 public totalPeople;
+  address[5] public betters;
+  uint8 public betCount;
+  uint256 public betPool;
   uint256 public nonBinaryPeople;
   uint256 public queerPeople;
   uint256 public allyPeople;
 
   struct Person {
+    string twitterID;
     string name;
     string genderIdentity;
     string sexualOrientation;
-    uint256 amountBet;
-    uint256 numberSelected;
+    uint256 exists;
   }
 
   mapping(address => Person) public personInfo;
 
-  constructor(uint256 _minimumBet) public {
+  constructor() public {
     owner = msg.sender;
-    if(_minimumBet != 0) minimumBet = _minimumBet;
   }
 
   function kill() public {
     if(msg.sender == owner) selfdestruct(owner);
   }
 
-  function personExists(address person) public view returns(bool) {
-    // a person exists if their amountBet is greater than 0
-    return (personInfo[person].amountBet > 0);
+  function sameABIPackedStrings(string a, string b) internal pure returns(bool) {
+    return keccak256(abi.encodePacked(a)) == keccak256(abi.encodePacked(b)); // careful with this for hash collisions
   }
 
-  function sameABIPackedStrings(string a, string b) public pure returns(bool) {
-    // careful with this for hash collisions
-    return keccak256(abi.encodePacked(a)) == keccak256(abi.encodePacked(b));
-  }
-
-  // EXAMPLE
-  function bet(uint256 numberSelected) public payable {
-    require(!personExists(msg.sender));
-    require(numberSelected >= 1 && numberSelected <= 10);
-    require(msg.value >= minimumBet);
-
-    personInfo[msg.sender].amountBet = msg.value;
-    personInfo[msg.sender].numberSelected = numberSelected;
-    numberOfBets++;
-    people.push(msg.sender);
-    totalBet += msg.value;
-
-    if(numberOfBets == maxAmountOfBets) generateNumberWinner();
-  }
-  function generateNumberWinner() public {
-    uint256 numberGenerated = block.number % 10 + 1;
-    distributePrizes(numberGenerated);
-  }
-  function distributePrizes(uint256 numberWinner) private {
-    address[20] memory winners;
-    uint256 count = 0;
-    for(uint256 i = 0; i < people.length; i++){
-      address personAddress = people[i];
-      if(personInfo[personAddress].numberSelected == numberWinner){
-        winners[count] = personAddress;
-        count++;
-      }
-      delete personInfo[personAddress];
+  function isBetter(address personAddress) internal view returns(bool) {
+    for(uint256 i = 0; i < 4; i++) {
+      if(betters[i] == personAddress) return true;
     }
-    people.length = 0;
-    uint256 winnerEtherAmount = totalBet / winners.length;
-    for(uint256 j = 0; j < count; j++){
-      if(winners[j] != address(0))
-      winners[j].transfer(winnerEtherAmount);
-    }
+    return false;
   }
-  // END EXAMPLE
 
-  // TODO: if person exists allow them to bet and win but don't add to the counts
-  // dont push them to people. use numberOfBets
+  function personExists(address personAddress) public view returns(bool) {
+     return (personInfo[personAddress].exists > 0);
+  }
 
-  function proclaim(
+  function registerPerson(
+    string twitterID,
+    string name,
+    string genderIdentity,
+    string sexualOrientation
+    ) public {
+      // create a new person with the input values
+      personInfo[msg.sender].twitterID = twitterID;
+      personInfo[msg.sender].name = name;
+      personInfo[msg.sender].genderIdentity = genderIdentity;
+      personInfo[msg.sender].sexualOrientation = sexualOrientation;
+      personInfo[msg.sender].exists = 21;
+      people.push(msg.sender);
+      if(sameABIPackedStrings(genderIdentity, 'cis') == false) nonBinaryPeople++;
+      if(sameABIPackedStrings(sexualOrientation, 'straight') == false) queerPeople++;
+      if((sameABIPackedStrings(genderIdentity, 'cis') == true)
+      && (sameABIPackedStrings(sexualOrientation, 'straight') == true)
+      ) allyPeople++;
+  }
+
+  function calculateMultiplier(
+    string genderIdentity,
+    string sexualOrientation
+    ) internal view returns(uint8) {
+      uint8 multiplier = 1;
+      if((sameABIPackedStrings(genderIdentity, 'cis') == false)
+      && (nonBinaryPeople % 21 == 0)) multiplier++;
+      if((sameABIPackedStrings(sexualOrientation, 'straight') == false)
+      && (queerPeople % 21 == 0)) multiplier++;
+      if((sameABIPackedStrings(genderIdentity, 'cis') == true)
+      && (sameABIPackedStrings(sexualOrientation, 'straight') == true)
+      && (allyPeople % 21 == 0)
+      ) multiplier++;
+      if(block.number % 21 == 0) multiplier++;
+      return multiplier;
+  }
+
+  function payout(uint8 multiplier) private {
+    // 25
+    uint256 earnings = msg.value + (msg.value * multiplier);
+    // 300
+    uint256 maxPayout = betPool;
+    uint256 winnerPayout = 0;
+    uint256 leftoverPayout = 0;
+    if(earnings >= maxPayout) {
+      delete betPool;
+      winnerPayout = maxPayout;
+    } else {
+      betPool -= earnings;
+      leftoverPayout = betPool;
+      people[people.length-1].transfer(leftoverPayout);
+      winnerPayout = maxPayout - leftoverPayout;
+    }
+    msg.sender.transfer(winnerPayout);
+  }
+
+  function bet(
+    string twitterID,
     string name,
     string genderIdentity,
     string sexualOrientation
     ) public payable {
-      require(!personExists(msg.sender));
-      require(!sameABIPackedStrings(name, ""));
-      require(msg.value >= minimumBet);
-
-      personInfo[msg.sender].name = name;
-      personInfo[msg.sender].genderIdentity = genderIdentity;
-      personInfo[msg.sender].sexualOrientation = sexualOrientation;
-
-      totalPeople++;
-      people.push(msg.sender);
-
-      uint256 reward = 0;
-
-      if(totalPeople % 21 == 0) {
-        reward++;
-        if(sameABIPackedStrings(genderIdentity, 'cis') == false) {
-          nonBinaryPeople++;
-          if(nonBinaryPeople % 21 == 0) reward++;
-        }
-        if(sameABIPackedStrings(sexualOrientation, 'straight') == false) {
-          queerPeople++;
-          if(queerPeople % 21 == 0) reward++;
-        }
-        if((sameABIPackedStrings(genderIdentity, 'cis') == true)
-        && (sameABIPackedStrings(sexualOrientation, 'straight') == true)
-        ) {
-          allyPeople++;
-          if(allyPeople % 21 == 0) reward++;
-        }
-        if (block.number % 21 == 0) reward++;
-        // payout
-        uint256 earnings = msg.value + (msg.value * reward);
-        uint256 maxPayout = totalBet;
-        totalBet = 0; // prevents re-entry compromise
-        // check for non-negative values
-        if (maxPayout >= earnings) {
-          uint256 leftoverPayout = maxPayout - earnings;
-          if (maxPayout >= leftoverPayout) {
-            uint256 winnerPayout = maxPayout - leftoverPayout;
-            msg.sender.transfer(winnerPayout);
-            distributeLeftoverPayout(leftoverPayout);
-          }
-        }
-      } else {
-        totalBet += msg.value;
-      }
-    } // Proclaim
-
-  function distributeLeftoverPayout(uint256 leftoverPayout) private {
-    uint256 receiverPayout = leftoverPayout / 20;
-    for(uint256 i = people.length-2; i > people.length-22; i--) {
-      if(people[i] != address(0)) people[i].transfer(receiverPayout);
-    }
-  }
+      // must have a twitterID
+      require(!sameABIPackedStrings(twitterID, ""));
+      // must not be a better yet
+      require(!isBetter(msg.sender));
+      // must have a bet
+      require(msg.value > 0);
+      // register new ppl
+      if(!personExists(msg.sender)) registerPerson(twitterID, name, genderIdentity, sexualOrientation);
+      // add this bet to the pool of available funds to pull from
+      betPool += msg.value;
+      // check if we have reached max
+      if(betCount >= 5) delete betCount;
+      // add this person to betters list
+      betters[betCount] = msg.sender;
+      // increase number of bets to count this person
+      betCount++;
+      Person storage POI = personInfo[msg.sender];
+      // if this person is the 21st better, payout
+      if(betters[4] == msg.sender) payout(calculateMultiplier(POI.genderIdentity, POI.sexualOrientation));
+  } // bet
 
   // Fallback
   function() public payable { }
 
-}
+} // Queery
